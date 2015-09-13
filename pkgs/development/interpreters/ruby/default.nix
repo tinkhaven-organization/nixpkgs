@@ -2,7 +2,7 @@
 , zlib, zlibSupport ? true
 , openssl, opensslSupport ? true
 , gdbm, gdbmSupport ? true
-, ncurses, readline, cursesSupport ? true
+, ncurses, readline
 , groff, docSupport ? false
 , libyaml, yamlSupport ? true
 , libffi, fiddleSupport ? true
@@ -16,13 +16,17 @@ let
   opString = stdenv.lib.optionalString;
   patchSet = import ./rvm-patchsets.nix { inherit fetchFromGitHub; };
   config = import ./config.nix { inherit fetchFromSavannah; };
-  generic = { majorVersion, minorVersion, teenyVersion, patchLevel, sha256 } @ args:
-  let
-    versionNoPatch = "${majorVersion}.${minorVersion}.${teenyVersion}";
-    isRuby21 = majorVersion == "2" && minorVersion == "1";
-    isRuby18 = majorVersion == "1" && minorVersion == "8";
-    baseruby = self false;
-    self = useRailsExpress: stdenv.mkDerivation rec {
+
+generic = { majorVersion, minorVersion, teenyVersion, patchLevel, sha256 }: let
+  versionNoPatch = "${majorVersion}.${minorVersion}.${teenyVersion}";
+  isRuby21 = majorVersion == "2" && minorVersion == "1";
+  isRuby18 = majorVersion == "1" && minorVersion == "8";
+  baseruby = self.override { useRailsExpress = false; };
+  self = lib.makeOverridable (
+    { useRailsExpress ? true
+    , ncurses, readline, cursesSupport ? true
+    }:
+    stdenv.mkDerivation rec {
       version = "${versionNoPatch}-p${patchLevel}";
 
       name = "ruby-${version}";
@@ -36,10 +40,10 @@ let
         owner  = "ruby";
         repo   = "ruby";
         rev    = tag;
-        sha256 = args.sha256.git;
+        sha256 = sha256.git;
       } else fetchurl {
         url = "http://cache.ruby-lang.org/pub/ruby/${majorVersion}.${minorVersion}/ruby-${versionName}.tar.gz";
-        sha256 = args.sha256.src;
+        sha256 = sha256.src;
       };
 
       # Have `configure' avoid `/usr/bin/nroff' in non-chroot builds.
@@ -104,7 +108,7 @@ let
 
         envHooks+=(addGemPath)
         EOF
-      '' + lib.optionalString useRailsExpress ''
+      '' + opString useRailsExpress ''
         rbConfig=$(find $out/lib/ruby -name rbconfig.rb)
 
         # Prevent the baseruby from being included in the closure.
@@ -126,7 +130,8 @@ let
         libPath = "lib/${versionNoPatch}";
         gemPath = "lib/${rubyEngine}/gems/${versionNoPatch}";
       };
-    }; in self true;
+    }
+  ) { inherit ncurses readline; }; in self;
 
 in {
   ruby_1_8_7 = generic {
